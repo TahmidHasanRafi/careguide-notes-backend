@@ -1,0 +1,291 @@
+### =========================================================
+### Secure Notes API – manual tests (VS Code "REST Client" extension)
+### Run order: 1 → 2 → 3 ... (click "Send Request" above each block)
+### Requires: npm run seed (demo passwords: first name + 123456)
+### =========================================================
+
+# Variables live at the top: anything written after a JSON body would be sent as part of the body.
+@base = http://localhost:5050/api
+@adminToken = {{adminLogin.response.body.token}}
+@userToken = {{userLogin.response.body.token}}
+@userId = {{userLogin.response.body.user._id}}
+@noteId = {{createNote.response.body.data._id}}
+@newUserId = {{adminCreate.response.body.data._id}}
+@staffToken = {{staffLogin.response.body.token}}
+@staffId = {{staffLogin.response.body.user._id}}
+
+### 0. Health check
+GET {{base}}/health
+
+### 1. Login as ADMIN (ADMIN_EMAIL / ADMIN_PASSWORD in backend/config.js)
+# @name adminLogin
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Admin123456"
+}
+
+### 2. Login as normal USER (demo user)
+# @name userLogin
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "ayesha@demo.com",
+  "password": "Ayesha123456"
+}
+
+### 3. Register a new user (adding "role" to the body is rejected with 400)
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test User",
+  "email": "test{{$randomInt 1000 9999}}@demo.com",
+  "password": "Password123!",
+  "interests": ["Chess", "music"]
+}
+
+### 4. My profile
+GET {{base}}/auth/me
+Authorization: Bearer {{userToken}}
+
+### 5. Update my profile / interests
+PATCH {{base}}/auth/me
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "interests": ["chess", "reading", "travel", "music"]
+}
+
+### ---------------- NOTES (user) ----------------
+
+### 6. Create a note
+# @name createNote
+POST {{base}}/notes
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "title": "Shopping list",
+  "content": "Milk, eggs, bread"
+}
+
+### 7. List my notes (paginated)
+GET {{base}}/notes?page=1&limit=5
+Authorization: Bearer {{userToken}}
+
+### 8. Get one note
+GET {{base}}/notes/{{noteId}}
+Authorization: Bearer {{userToken}}
+
+### 9. Update a note
+PATCH {{base}}/notes/{{noteId}}
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "content": "Milk, eggs, bread, rice"
+}
+
+### 10. Delete a note (expect 204)
+DELETE {{base}}/notes/{{noteId}}
+Authorization: Bearer {{userToken}}
+
+### ---------------- ADMIN ----------------
+
+### 11. User tries admin route (expect 403)
+GET {{base}}/admin/users
+Authorization: Bearer {{userToken}}
+
+### 12. Admin: list users
+GET {{base}}/admin/users?page=1&limit=10
+Authorization: Bearer {{adminToken}}
+
+### 13. Admin: add user
+# @name adminCreate
+POST {{base}}/admin/users
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Created By Admin",
+  "email": "byadmin{{$randomInt 1000 9999}}@demo.com",
+  "password": "Password123!",
+  "role": "user",
+  "interests": ["football"]
+}
+
+### 14. Admin: get one user
+GET {{base}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}
+
+### 15. Admin: update user
+PATCH {{base}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Renamed By Admin",
+  "interests": ["football", "chess"]
+}
+
+### 16. Admin: everyone's notes
+GET {{base}}/admin/notes?page=1&limit=10
+Authorization: Bearer {{adminToken}}
+
+### 17. Admin: notes of one user
+GET {{base}}/admin/notes?page=1&limit=10&owner={{userId}}
+Authorization: Bearer {{adminToken}}
+
+### 18. Admin: remove user (also deletes their notes + posts)
+DELETE {{base}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}
+
+### ---------------- POSTS + AGGREGATIONS ----------------
+
+### 19. Create a post
+POST {{base}}/posts
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "title": "Hello everyone",
+  "body": "My first public post."
+}
+
+### 20. Public feed (no token needed)
+GET {{base}}/posts?page=1&limit=5
+
+### 21. Scenario 2 – all posts of one user ($lookup)
+GET {{base}}/users/{{userId}}/posts?page=1&limit=5
+
+### 22. Scenario 1 – users grouped by interest
+GET {{base}}/users/interests?page=1&limit=10
+Authorization: Bearer {{userToken}}
+
+### 23. Scenario 1 – only one interest group
+GET {{base}}/users/interests?interest=chess
+Authorization: Bearer {{userToken}}
+
+### ---------------- SECURITY CHECKS ----------------
+
+### 24. NoSQL injection attempt (expect 400)
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": { "$gt": "" },
+  "password": "x"
+}
+
+### 25. No token (expect 401)
+GET {{base}}/notes
+
+### 26. Invalid id (expect 400)
+GET {{base}}/notes/123
+Authorization: Bearer {{userToken}}
+
+### ---------------- STAFF (created by admin, permission-limited) ----------------
+
+### 27. Login as demo STAFF (permissions: users.view, notes.view_all)
+# @name staffLogin
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "staff@demo.com",
+  "password": "Staff123456"
+}
+
+### 28. Staff: user list (allowed — has users.view)
+GET {{base}}/admin/users?page=1&limit=10
+Authorization: Bearer {{staffToken}}
+
+### 29. Staff: own notes (expect 403 — staff only get permitted sections)
+GET {{base}}/notes
+Authorization: Bearer {{staffToken}}
+
+### 30. Staff: add user without users.create (expect 403)
+POST {{base}}/admin/users
+Authorization: Bearer {{staffToken}}
+Content-Type: application/json
+
+{
+  "name": "Should Fail",
+  "email": "fail{{$randomInt 1000 9999}}@demo.com",
+  "password": "Password123!"
+}
+
+### 31. Admin: give staff more permissions
+PATCH {{base}}/admin/users/{{staffId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "permissions": ["users.view", "users.create", "notes.view_all"]
+}
+
+### 32. Staff: try to create an ADMIN (expect 403 — no escalation)
+POST {{base}}/admin/users
+Authorization: Bearer {{staffToken}}
+Content-Type: application/json
+
+{
+  "name": "Sneaky",
+  "email": "sneaky{{$randomInt 1000 9999}}@demo.com",
+  "password": "Password123!",
+  "role": "admin"
+}
+
+### 33. Admin: limit staff to one IP (a different one -> staff gets signed out)
+PATCH {{base}}/admin/users/{{staffId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "allowedIps": ["10.0.0.5"]
+}
+
+### 34. Staff request from this machine (expect 401: IP not allowed)
+GET {{base}}/admin/users
+Authorization: Bearer {{staffToken}}
+
+### 35. Admin: remove the IP limit (any IP again)
+PATCH {{base}}/admin/users/{{staffId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "allowedIps": []
+}
+
+### 36. Admin: switch staff off
+PATCH {{base}}/admin/users/{{staffId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+### 37. Switched-off staff tries to log in (expect 403)
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "staff@demo.com",
+  "password": "Staff123456"
+}
+
+### 38. Admin: switch staff back on
+PATCH {{base}}/admin/users/{{staffId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": true
+}

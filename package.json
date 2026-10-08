@@ -1,0 +1,31 @@
+{
+  "name": "careguide-notes-backend",
+  "version": "1.0.0",
+  "description": "Secure note-taking REST API (Express + MongoDB/Mongoose + JWT) with RBAC, pagination, minimal indexes and aggregation pipelines",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node scripts/seed.js",
+    "seed:demo": "node scripts/seed.js --demo",
+    "indexes": "node scripts/sync-indexes.js",
+    "explain": "node scripts/explain.js",
+    "test:permissions": "node scripts/test-permissions.js",
+    "reset-passwords": "node scripts/reset-passwords.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.0",
+    "zod": "^3.24.0"
+  }
+}
